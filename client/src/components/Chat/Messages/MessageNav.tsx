@@ -132,8 +132,8 @@ const MessageIndicator = memo(function MessageIndicator({
             className={cn(
               'block w-full rounded-full transition-all duration-200',
               isActive
-                ? 'h-[5px] bg-gray-800 dark:bg-gray-100'
-                : 'h-[3px] bg-gray-400 dark:bg-gray-500',
+                ? 'h-[5px] bg-text-primary'
+                : 'h-[3px] bg-border-heavy',
             )}
           />
         </button>
