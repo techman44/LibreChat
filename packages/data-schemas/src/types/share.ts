@@ -50,6 +50,7 @@ export type SharedMessage = Pick<
   | 'finish_reason'
   | 'manualSkills'
   | 'alwaysAppliedSkills'
+  | 'quotes'
 > & {
   model?: string;
   files?: SharedFile[];

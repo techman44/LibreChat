@@ -2,9 +2,9 @@ import { nanoid } from 'nanoid';
 import mongoose from 'mongoose';
 import { Constants } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createShareMethods, type ShareMethods } from './share';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
+import { createShareMethods, type ShareMethods } from './share';
 
 describe('Share Methods', () => {
   let mongoServer: MongoMemoryServer;
@@ -49,6 +49,7 @@ describe('Share Methods', () => {
         feedback: mongoose.Schema.Types.Mixed,
         manualSkills: [String],
         alwaysAppliedSkills: [String],
+        quotes: [String],
         parentMessageId: String,
         attachments: [mongoose.Schema.Types.Mixed],
         files: [mongoose.Schema.Types.Mixed],
@@ -432,6 +433,7 @@ describe('Share Methods', () => {
         feedback: { rating: 'thumbsDown', tag: { key: 'inaccurate' }, text: 'private note' },
         manualSkills: ['research'],
         alwaysAppliedSkills: ['brand-voice'],
+        quotes: ['the quoted excerpt'],
         files: [
           {
             file_id: 'file123',
@@ -485,6 +487,8 @@ describe('Share Methods', () => {
       // Skill badges are non-sensitive UI metadata and should still render.
       expect(shared?.manualSkills).toEqual(['research']);
       expect(shared?.alwaysAppliedSkills).toEqual(['brand-voice']);
+      // Quoted excerpts are non-sensitive UI metadata and should still render in the share view.
+      expect(shared?.quotes).toEqual(['the quoted excerpt']);
 
       // User-uploaded files keep their render URL (filepath/preview) but drop storage internals.
       const file = shared?.files?.[0];
