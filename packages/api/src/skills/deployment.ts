@@ -201,6 +201,24 @@ type LoadedSkillDirectory = {
   relativeDirectory: string;
 };
 
+type ResolvedLoadConfig = {
+  directory: string;
+  projectRoot: string;
+  explicitlyConfigured: boolean;
+};
+
+export type DeploymentSkillReloadResult = {
+  directory: string | null;
+  count: number;
+  added: string[];
+  removed: string[];
+  changed: string[];
+};
+
+export type DeploymentSkillWatcher = {
+  close: () => void;
+};
+
 export class DeploymentSkillRegistry {
   private readonly skillsById = new Map<string, DeploymentSkill>();
   private readonly skillsByName = new Map<string, DeploymentSkill>();
@@ -330,6 +348,7 @@ export class DeploymentSkillRegistry {
 }
 
 let registry = new DeploymentSkillRegistry(null, []);
+let loadConfig: ResolvedLoadConfig | null = null;
 const warnedDeploymentNameCollisions = new Set<string>();
 
 export function getDeploymentSkillRegistry(): DeploymentSkillRegistry {
@@ -406,9 +425,14 @@ export async function initializeDeploymentSkills(
   options: LoadDeploymentSkillsOptions = {},
 ): Promise<DeploymentSkillRegistry> {
   const resolved = resolveDeploymentSkillDirectory(options);
-  registry = await loadDeploymentSkillsFromDirectory(resolved.directory, {
+  loadConfig = {
+    directory: resolved.directory,
     projectRoot: options.projectRoot ?? process.cwd(),
     explicitlyConfigured: resolved.explicitlyConfigured,
+  };
+  registry = await loadDeploymentSkillsFromDirectory(resolved.directory, {
+    projectRoot: loadConfig.projectRoot,
+    explicitlyConfigured: loadConfig.explicitlyConfigured,
   });
   const count = registry.list().length;
   if (count > 0) {
@@ -447,6 +471,126 @@ export async function loadDeploymentSkillsFromDirectory(
   );
   validateUniqueNames(skills);
   return new DeploymentSkillRegistry(directory, skills.sort(compareBySkillCursor));
+}
+
+/**
+ * Rebuilds the deployment skill registry from the directory resolved at
+ * startup and atomically swaps it in. The new registry is built before the
+ * swap, so a validation error (duplicate names, malformed `SKILL.md`, etc.)
+ * leaves the live registry untouched and the error propagates to the caller.
+ * Returns a diff of skill names by `name` + `mtime` so callers can report
+ * exactly what changed.
+ */
+export async function reloadDeploymentSkills(): Promise<DeploymentSkillReloadResult> {
+  if (!loadConfig) {
+    throw new Error('Deployment skills have not been initialized; cannot reload');
+  }
+  const previous = registry;
+  const next = await loadDeploymentSkillsFromDirectory(loadConfig.directory, {
+    projectRoot: loadConfig.projectRoot,
+    explicitlyConfigured: loadConfig.explicitlyConfigured,
+  });
+  const diff = diffSkillRegistries(previous, next);
+  registry = next;
+  logger.info(
+    `[deploymentSkills] Reloaded ${next.list().length} deployment skill(s) from ${next.getDirectory()} ` +
+      `(+${diff.added.length} -${diff.removed.length} ~${diff.changed.length})`,
+  );
+  return diff;
+}
+
+function diffSkillRegistries(
+  previous: DeploymentSkillRegistry,
+  next: DeploymentSkillRegistry,
+): DeploymentSkillReloadResult {
+  const previousByName = new Map(previous.list().map((skill) => [skill.name, skill]));
+  const nextByName = new Map(next.list().map((skill) => [skill.name, skill]));
+  const added: string[] = [];
+  const changed: string[] = [];
+  for (const [name, skill] of nextByName) {
+    const prior = previousByName.get(name);
+    if (!prior) {
+      added.push(name);
+      continue;
+    }
+    if (prior.updatedAt.getTime() !== skill.updatedAt.getTime()) {
+      changed.push(name);
+    }
+  }
+  const removed: string[] = [];
+  for (const name of previousByName.keys()) {
+    if (!nextByName.has(name)) {
+      removed.push(name);
+    }
+  }
+  return {
+    directory: next.getDirectory(),
+    count: next.list().length,
+    added: added.sort(),
+    removed: removed.sort(),
+    changed: changed.sort(),
+  };
+}
+
+/**
+ * Watches the resolved deployment skills directory and reloads the registry on
+ * change, debounced to coalesce the burst of events a single edit produces.
+ * A failed reload is logged and the previous registry is preserved (see
+ * `reloadDeploymentSkills`). Returns a handle whose `close()` stops the watcher;
+ * returns `null` when skills were never initialized or the directory is absent.
+ */
+export function watchDeploymentSkills(
+  options: { debounceMs?: number } = {},
+): DeploymentSkillWatcher | null {
+  if (!loadConfig) {
+    return null;
+  }
+  const directory = loadConfig.directory;
+  if (!fs.existsSync(directory)) {
+    logger.debug(`[deploymentSkills] Not watching missing directory ${directory}`);
+    return null;
+  }
+  const debounceMs = options.debounceMs ?? 500;
+  let timer: NodeJS.Timeout | null = null;
+  let watcher: fs.FSWatcher;
+  try {
+    watcher = fs.watch(directory, { recursive: true });
+  } catch (error) {
+    logger.warn(
+      `[deploymentSkills] Unable to watch ${directory} for changes: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return null;
+  }
+  watcher.on('change', () => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+    timer = setTimeout(() => {
+      timer = null;
+      reloadDeploymentSkills().catch((error) => {
+        logger.error(
+          `[deploymentSkills] Hot reload failed; keeping previously loaded skills: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
+    }, debounceMs);
+  });
+  watcher.on('error', (error) => {
+    logger.warn(`[deploymentSkills] Watcher error for ${directory}: ${error.message}`);
+  });
+  logger.info(`[deploymentSkills] Watching ${directory} for skill changes (hot reload enabled)`);
+  return {
+    close: () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      watcher.close();
+    },
+  };
 }
 
 export function createDeploymentSkillMethods<T extends DeploymentSkillBaseMethods>(
