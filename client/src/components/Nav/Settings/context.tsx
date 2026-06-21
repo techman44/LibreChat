@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { PermissionTypes, Permissions, SystemRoles } from 'librechat-data-provider';
 import type { SettingsContextValue } from './types';
 import useProviderKeys from '../SettingsTabs/ProviderKeys/useProviderKeys';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
@@ -31,6 +31,7 @@ export function useSettingsContext(): SettingsContextValue {
   const twoFactorEnabled = user?.twoFactorEnabled === true;
   const allowAccountDeletion = startupConfig?.allowAccountDeletion !== false;
   const aboutEnabled = startupConfig?.interface?.buildInfo !== false;
+  const isAdmin = user?.role === SystemRoles.ADMIN;
   const hasRemoteAgentsBool = hasRemoteAgents === true;
   const hasMultiConvoBool = hasMultiConvo === true;
   const hasPromptsBool = hasPrompts === true;
@@ -50,6 +51,7 @@ export function useSettingsContext(): SettingsContextValue {
       twoFactorEnabled,
       allowAccountDeletion,
       aboutEnabled,
+      isAdmin,
       engineTTS,
     }),
     [
@@ -64,6 +66,7 @@ export function useSettingsContext(): SettingsContextValue {
       twoFactorEnabled,
       allowAccountDeletion,
       aboutEnabled,
+      isAdmin,
       engineTTS,
     ],
   );

@@ -34,6 +34,7 @@ import { TokenCredits, AutoRefill } from './BillingControls';
 import SharedLinks from '../SettingsTabs/Data/SharedLinks';
 import { showThinkingAtom } from '~/store/showThinking';
 import ProviderKeys from '../SettingsTabs/ProviderKeys';
+import Connections from '../SettingsTabs/Connections';
 import Avatar from '../SettingsTabs/Account/Avatar';
 import About from '../SettingsTabs/About/About';
 import ApiKeys from '../SettingsTabs/ApiKeys';
@@ -490,6 +491,16 @@ export const registry: SettingEntry[] = [
     section: 'apiKeys',
     labelKey: 'com_ui_settings_label_revoke_keys',
     Component: RevokeKeys,
+  },
+  // Data controls · Connections (admin only)
+  {
+    id: 'connections',
+    tab: DATA,
+    section: 'connections',
+    labelKey: 'com_ui_connections',
+    keywords: ['provider', 'endpoint', 'connection', 'model', 'baseurl'],
+    show: (ctx) => ctx.isAdmin,
+    Component: Connections,
   },
   // Data controls · Danger zone
   {

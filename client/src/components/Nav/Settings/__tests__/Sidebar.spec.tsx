@@ -17,6 +17,7 @@ const ctx: SettingsContextValue = {
   twoFactorEnabled: false,
   allowAccountDeletion: true,
   aboutEnabled: false,
+  isAdmin: false,
   engineTTS: 'browser',
 };
 

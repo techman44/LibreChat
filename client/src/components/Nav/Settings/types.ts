@@ -27,6 +27,7 @@ export type SectionId =
   | 'memory'
   | 'data'
   | 'apiKeys'
+  | 'connections'
   | 'danger'
   | 'profile'
   | 'security'
@@ -45,6 +46,7 @@ export interface SettingsContextValue {
   twoFactorEnabled: boolean;
   allowAccountDeletion: boolean;
   aboutEnabled: boolean;
+  isAdmin: boolean;
   engineTTS: string;
 }
 
@@ -112,6 +114,7 @@ export const TABS: TabMeta[] = [
       { id: 'memory', labelKey: 'com_ui_settings_section_memory' },
       { id: 'data', labelKey: 'com_ui_settings_section_data' },
       { id: 'apiKeys', labelKey: 'com_ui_settings_section_api_keys' },
+      { id: 'connections', labelKey: 'com_ui_settings_section_connections' },
       { id: 'danger', labelKey: 'com_ui_settings_section_danger_zone', danger: true },
     ],
   },
