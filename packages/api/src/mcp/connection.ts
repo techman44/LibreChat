@@ -22,7 +22,7 @@ import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
 import { runOutsideTracing } from '~/utils/tracing';
-import { isAddressAllowed } from '~/auth/domain';
+import { isAddressAllowed, mergeAllowedAddresses } from '~/auth/domain';
 import { sanitizeUrlForLogging } from './utils';
 import { withTimeout } from '~/utils/promise';
 import { mcpConfig } from './mcpConfig';
@@ -1236,7 +1236,10 @@ export class MCPConnection extends EventEmitter {
     this.serverName = params.serverName;
     this.userId = params.userId;
     this.useSSRFProtection = params.useSSRFProtection === true;
-    this.allowedAddresses = params.allowedAddresses ?? null;
+    this.allowedAddresses = mergeAllowedAddresses(
+      params.allowedAddresses,
+      params.serverConfig.allowedAddresses,
+    );
     this.ephemeralConnection = params.ephemeralConnection === true;
     this.proxyConfig = getMCPProxyConfig(params.serverConfig);
     this.iconPath = params.serverConfig.iconPath;

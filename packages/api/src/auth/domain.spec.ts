@@ -11,6 +11,7 @@ import {
   isEmailDomainAllowed,
   isOAuthUrlAllowed,
   isMCPDomainAllowed,
+  mergeAllowedAddresses,
   isPrivateIP,
   isSSRFTarget,
   resolveHostnameSSRF,
@@ -1210,6 +1211,71 @@ describe('isMCPDomainAllowed', () => {
         false,
       );
     });
+  });
+
+  describe('per-server allowedAddresses scoping', () => {
+    afterEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('exempts a private target via the server config when no global list is set', async () => {
+      const config = { url: 'http://10.0.0.5:11434/mcp', allowedAddresses: ['10.0.0.5:11434'] };
+      expect(await isMCPDomainAllowed(config, null, null)).toBe(true);
+    });
+
+    it('blocks the same private target without a per-server or global exemption', async () => {
+      const config = { url: 'http://10.0.0.5:11434/mcp' };
+      expect(await isMCPDomainAllowed(config, null, null)).toBe(false);
+    });
+
+    it('does not exempt a different port than the per-server entry', async () => {
+      const config = { url: 'http://10.0.0.5:22/mcp', allowedAddresses: ['10.0.0.5:11434'] };
+      expect(await isMCPDomainAllowed(config, null, null)).toBe(false);
+    });
+
+    it('unions the per-server list with the global list', async () => {
+      const config = { url: 'http://10.0.0.6:11434/mcp', allowedAddresses: ['10.0.0.6:11434'] };
+      expect(await isMCPDomainAllowed(config, null, ['127.0.0.1:11434'])).toBe(true);
+    });
+
+    it('still honors the global list when the server has no per-server entry', async () => {
+      const config = { url: 'http://10.0.0.5:11434/mcp' };
+      expect(await isMCPDomainAllowed(config, null, ['10.0.0.5:11434'])).toBe(true);
+    });
+
+    it('does not let a per-server entry bypass an active allowedDomains allowlist', async () => {
+      const config = { url: 'http://10.0.0.5:11434/mcp', allowedAddresses: ['10.0.0.5:11434'] };
+      expect(await isMCPDomainAllowed(config, ['example.com'], null)).toBe(false);
+    });
+  });
+});
+
+describe('mergeAllowedAddresses', () => {
+  it('returns null when both lists are empty or absent', () => {
+    expect(mergeAllowedAddresses(null, null)).toBeNull();
+    expect(mergeAllowedAddresses([], undefined)).toBeNull();
+    expect(mergeAllowedAddresses(undefined, [])).toBeNull();
+  });
+
+  it('returns the global list when there is no per-server list', () => {
+    expect(mergeAllowedAddresses(['10.0.0.5:11434'], null)).toEqual(['10.0.0.5:11434']);
+  });
+
+  it('returns the per-server list when there is no global list', () => {
+    expect(mergeAllowedAddresses(null, ['10.0.0.5:11434'])).toEqual(['10.0.0.5:11434']);
+  });
+
+  it('unions and de-duplicates entries case-insensitively', () => {
+    expect(
+      mergeAllowedAddresses(['Ollama.internal:11434'], ['ollama.internal:11434', '10.0.0.5:11434']),
+    ).toEqual(['Ollama.internal:11434', '10.0.0.5:11434']);
+  });
+
+  it('preserves global entries ahead of per-server additions', () => {
+    expect(mergeAllowedAddresses(['10.0.0.5:11434'], ['10.0.0.6:11434'])).toEqual([
+      '10.0.0.5:11434',
+      '10.0.0.6:11434',
+    ]);
   });
 });
 
