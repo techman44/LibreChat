@@ -2346,6 +2346,28 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
+  /**
+   * Verifies tool support for a connected server whose advertised capabilities omit `tools`.
+   * Some gateways (e.g. LiteLLM) expose tools without declaring `capabilities.tools`, so we
+   * probe `tools/list`; a non-empty result both proves the connection is live and lets us
+   * synthesize the missing `capabilities.tools` so later checks treat the server as tool-capable.
+   */
+  private async hasUnadvertisedTools(
+    capabilities: NonNullable<ReturnType<Client['getServerCapabilities']>>,
+  ): Promise<boolean> {
+    try {
+      const { tools } = await this.client.listTools();
+      if (tools.length === 0) {
+        return false;
+      }
+      capabilities.tools = capabilities.tools ?? {};
+      return true;
+    } catch {
+      // Server does not support tools/list; fall through to other capability checks.
+      return false;
+    }
+  }
+
   public async isConnected(): Promise<boolean> {
     // First check if we're in a connected state
     if (this.connectionState !== 'connected') {
@@ -2390,6 +2412,10 @@ export class MCPConnection extends EventEmitter {
         // If we have capabilities, try calling a supported method to verify connection
         if (capabilities?.tools) {
           await this.client.listTools();
+          return this.connectionState === 'connected';
+        } else if (capabilities && (await this.hasUnadvertisedTools(capabilities))) {
+          // Some gateways (e.g. LiteLLM) connect with tools but omit `capabilities.tools`.
+          // A non-empty tools/list proves tool support, so synthesize the capability.
           return this.connectionState === 'connected';
         } else if (capabilities?.resources) {
           await this.client.listResources();
