@@ -502,6 +502,10 @@ export const createAgent = ({ ...data }: a.AgentCreateParams): Promise<a.Agent> 
   return request.post(endpoints.agents({}), data);
 };
 
+export const draftAgent = ({ ...data }: a.AgentCreateParams): Promise<a.AgentDraftResponse> => {
+  return request.post(endpoints.agents({ path: 'draft' }), data);
+};
+
 export const getAgentById = ({ agent_id }: { agent_id: string }): Promise<a.Agent> => {
   return request.get(
     endpoints.agents({

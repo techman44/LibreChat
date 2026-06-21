@@ -43,6 +43,22 @@ export const useCreateAgentMutation = (
 };
 
 /**
+ * Validate and preview a drafted agent without persisting it.
+ * Backs the AI Agent Builder panel.
+ */
+export const useDraftAgentMutation = (
+  options?: {
+    onSuccess?: (data: t.AgentDraftResponse, variables: t.AgentCreateParams) => void;
+    onError?: (error: Error, variables: t.AgentCreateParams) => void;
+  },
+): UseMutationResult<t.AgentDraftResponse, Error, t.AgentCreateParams> => {
+  return useMutation((data: t.AgentCreateParams) => dataService.draftAgent(data), {
+    onError: (error, variables) => options?.onError?.(error, variables),
+    onSuccess: (data, variables) => options?.onSuccess?.(data, variables),
+  });
+};
+
+/**
  * Hook for updating an agent
  */
 export const useUpdateAgentMutation = (
