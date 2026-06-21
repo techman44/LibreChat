@@ -299,7 +299,13 @@ export async function initializeCustom({
     ...customOptions,
   };
 
-  const modelOptions = { ...(model_parameters ?? {}), user: userId };
+  const modelOptions: Record<string, unknown> = { ...(model_parameters ?? {}), user: userId };
+
+  /** Seed the endpoint's `useResponsesApi` default when the request didn't
+   *  specify one, so agents and the conversation path inherit it. */
+  if (modelOptions.useResponsesApi == null && endpointConfig.useResponsesApi != null) {
+    modelOptions.useResponsesApi = endpointConfig.useResponsesApi;
+  }
 
   let options: InitializeResultBase;
   if (endpointConfig.provider === EModelEndpoint.anthropic) {
