@@ -325,6 +325,11 @@ export type AgentCreateParams = {
   | 'subagents'
 >;
 
+export type AgentDraftResponse = {
+  agent: AgentCreateParams & { author: string; tools: string[] };
+  droppedTools: string[];
+};
+
 export type AgentUpdateParams = {
   name?: string | null;
   description?: string | null;

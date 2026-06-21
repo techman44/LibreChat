@@ -49,6 +49,16 @@ router.get('/categories', v1.getAgentCategories);
 router.post('/', checkAgentCreate, v1.createAgent);
 
 /**
+ * Validates a drafted agent payload (schema + tool authorization) without
+ * persisting it. Powers the AI Agent Builder panel preview before the user
+ * confirms creation via POST /agents.
+ * @route POST /agents/draft
+ * @param {AgentCreateParams} req.body - The drafted agent creation parameters.
+ * @returns {{ agent: Agent, droppedTools: string[] }} 200 - Preview - application/json
+ */
+router.post('/draft', checkAgentCreate, v1.draftAgent);
+
+/**
  * Retrieves basic agent information (VIEW permission required).
  * Returns safe, non-sensitive agent data for viewing purposes.
  * @route GET /agents/:id

@@ -4,6 +4,7 @@ import {
   Bot,
   Brain,
   Bookmark,
+  Sparkles,
   NotebookPen,
   ScrollText,
   ArrowRightToLine,
@@ -25,6 +26,7 @@ import {
   useGetAgentsConfig,
   useHasAccess,
 } from '~/hooks';
+import AgentBuilderPanel from '~/components/SidePanel/AgentBuilder/AgentBuilderPanel';
 import MCPBuilderPanel from '~/components/SidePanel/MCPBuilder/MCPBuilderPanel';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
@@ -108,6 +110,13 @@ export default function useSideNavLinks({
         icon: Bot,
         id: EModelEndpoint.agents,
         Component: AgentPanelSwitch,
+      });
+      links.push({
+        title: 'com_sidepanel_ai_agent_builder',
+        label: '',
+        icon: Sparkles,
+        id: 'ai-agent-builder',
+        Component: AgentBuilderPanel,
       });
     }
 

@@ -466,6 +466,97 @@ const createAgentHandler = async (req, res) => {
 };
 
 /**
+ * Validates an agent payload and resolves its authorized tools WITHOUT
+ * persisting anything. Used by the AI Agent Builder panel to preview a
+ * model-drafted agent before the user confirms creation through the
+ * normal POST /Agents pipeline. Mirrors the validation in
+ * `createAgentHandler` (schema parse, edge/subagent ACL, tool filtering)
+ * so the preview reflects exactly what would be saved.
+ * @route POST /Agents/draft
+ * @param {ServerRequest} req - The request object.
+ * @param {AgentCreateParams} req.body - The drafted agent payload.
+ * @param {ServerResponse} res - The response object.
+ * @returns {Promise<{ agent: object, droppedTools: string[] }>} 200 - preview - application/json
+ */
+const draftAgentHandler = async (req, res) => {
+  try {
+    const validatedData = agentCreateSchema.parse(req.body);
+    const { tools = [], ...agentData } = removeNullishValues(validatedData);
+
+    if (agentData.model_parameters && typeof agentData.model_parameters === 'object') {
+      agentData.model_parameters = removeNullishValues(agentData.model_parameters, true);
+    }
+
+    const { id: userId, role: userRole } = req.user;
+
+    if (agentData.edges?.length) {
+      const unauthorized = await validateEdgeAgentAccess(agentData.edges, userId, userRole);
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in edges',
+          agent_ids: unauthorized,
+        });
+      }
+    }
+
+    if (
+      isSubagentsCapabilityEnabled(req) &&
+      agentData.subagents?.enabled === true &&
+      agentData.subagents?.agent_ids?.length
+    ) {
+      const { missing, unauthorized } = await validateSubagentReferences(
+        agentData.subagents,
+        userId,
+        userRole,
+      );
+      if (missing.length > 0) {
+        return res.status(400).json({
+          error: 'One or more agents referenced in subagents do not exist',
+          agent_ids: missing,
+        });
+      }
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in subagents',
+          agent_ids: unauthorized,
+        });
+      }
+    }
+
+    const hasMCPTools = tools.some((t) => t?.includes(Constants.mcp_delimiter));
+    const [availableTools, configServers] = await Promise.all([
+      getCachedTools().then((t) => t ?? {}),
+      hasMCPTools ? resolveConfigServers(req) : Promise.resolve(undefined),
+    ]);
+    const mcpPermissionContext = createMCPPermissionContext(req);
+    const authorizedTools = await filterAuthorizedTools({
+      tools,
+      userId,
+      role: req.user.role,
+      user: req.user,
+      mcpPermissionContext,
+      availableTools,
+      configServers,
+    });
+
+    const authorizedToolSet = new Set(authorizedTools);
+    const droppedTools = tools.filter((tool) => !authorizedToolSet.has(tool));
+
+    res.status(200).json({
+      agent: { ...agentData, author: userId, tools: authorizedTools },
+      droppedTools,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      logger.error('[/Agents/draft] Validation error', error.errors);
+      return res.status(400).json({ error: 'Invalid request data', details: error.errors });
+    }
+    logger.error('[/Agents/draft] Error drafting agent', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
  * Retrieves an Agent by ID.
  * @route GET /Agents/:id
  * @param {object} req - Express Request
@@ -1306,6 +1397,7 @@ const getAgentCategories = async (_req, res) => {
 };
 module.exports = {
   createAgent: createAgentHandler,
+  draftAgent: draftAgentHandler,
   getAgent: getAgentHandler,
   updateAgent: updateAgentHandler,
   duplicateAgent: duplicateAgentHandler,
