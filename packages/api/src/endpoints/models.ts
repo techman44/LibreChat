@@ -267,6 +267,216 @@ function modelsCacheKey(baseURL: string, apiKey: string): string {
   return crypto.createHash('sha256').update(`${baseURL}:${apiKey}`).digest('hex').slice(0, 32);
 }
 
+/**
+ * Builds the request headers used to probe an OpenAI-compatible endpoint,
+ * mirroring the auth/header resolution performed by {@link fetchModels}.
+ */
+function buildProbeHeaders({
+  apiKey,
+  name,
+  baseURL,
+  headers,
+  userObject,
+}: Pick<ProbeEndpointParams, 'apiKey' | 'name' | 'baseURL' | 'headers' | 'userObject'>): Record<
+  string,
+  string
+> {
+  const resolvedHeaders = resolveHeaders({
+    headers: headers ?? undefined,
+    user: userObject,
+  });
+
+  const requestHeaders: Record<string, string> = { ...resolvedHeaders };
+
+  if (name === EModelEndpoint.anthropic) {
+    requestHeaders['x-api-key'] = apiKey;
+    requestHeaders['anthropic-version'] = process.env.ANTHROPIC_VERSION || '2023-06-01';
+  } else {
+    const hasAuthHeader = Object.keys(requestHeaders).some(
+      (k) => k.toLowerCase() === 'authorization',
+    );
+    if (!hasAuthHeader) {
+      requestHeaders.Authorization = `Bearer ${apiKey}`;
+    }
+  }
+
+  if (process.env.OPENAI_ORGANIZATION && baseURL?.includes('openai')) {
+    requestHeaders['OpenAI-Organization'] = process.env.OPENAI_ORGANIZATION;
+  }
+
+  return requestHeaders;
+}
+
+export interface ProbeEndpointParams {
+  /** API key for authentication */
+  apiKey: string;
+  /** Base URL for the OpenAI-compatible API */
+  baseURL: string;
+  /** Endpoint name (defaults to 'openAI') */
+  name?: string;
+  /** Optional headers for the request */
+  headers?: Record<string, string> | null;
+  /** Optional user object for header placeholder resolution */
+  userObject?: Partial<IUser>;
+  /** Request timeout in milliseconds (defaults to 5000) */
+  timeout?: number;
+  /**
+   * When true, also issue a 1-token chat-completions ping and, when the
+   * endpoint opts into the Responses API, a matching `/responses` ping to
+   * detect a backend that does not actually support it.
+   */
+  chatPing?: boolean;
+  /** Whether the endpoint is configured to use the OpenAI Responses API */
+  useResponsesApi?: boolean;
+}
+
+export interface ProbeEndpointResult {
+  /** Whether the `/models` probe returned a successful response */
+  reachable: boolean;
+  /** Round-trip latency of the `/models` probe in milliseconds */
+  latencyMs: number;
+  /** Number of models returned by the probe (0 when unreachable) */
+  modelCount: number;
+  /**
+   * True when the endpoint opts into the Responses API (`useResponsesApi`)
+   * but a live `/responses` ping fails while chat-completions succeeds —
+   * i.e. the backend only speaks chat/completions. Null when not probed.
+   */
+  detectedResponsesApiMismatch: boolean | null;
+  /** HTTP status of the `/models` probe, when available */
+  status?: number;
+  /** Error message when the probe failed */
+  error?: string;
+}
+
+/**
+ * Performs a live reachability probe against an OpenAI-compatible endpoint by
+ * issuing the same `/models` request used by {@link fetchModels}, measuring
+ * latency and model count. Optionally issues a 1-token chat ping to detect a
+ * Responses-API mismatch (endpoint opts into `useResponsesApi` but the backend
+ * only supports chat/completions).
+ */
+export async function probeEndpoint({
+  apiKey,
+  baseURL,
+  name = EModelEndpoint.openAI,
+  headers,
+  userObject,
+  timeout = 5000,
+  chatPing = false,
+  useResponsesApi = false,
+}: ProbeEndpointParams): Promise<ProbeEndpointResult> {
+  const result: ProbeEndpointResult = {
+    reachable: false,
+    latencyMs: 0,
+    modelCount: 0,
+    detectedResponsesApiMismatch: null,
+  };
+
+  const requestHeaders = buildProbeHeaders({ apiKey, name, baseURL, headers, userObject });
+  const url = new URL(`${baseURL.replace(/\/+$/, '')}/models`);
+  const options: AxiosRequestConfig & { headers: Record<string, string>; timeout: number } = {
+    headers: requestHeaders,
+    timeout,
+  };
+  applyAxiosProxyConfig(options, url);
+
+  const start = Date.now();
+  try {
+    const res = await axios.get(url.toString(), options);
+    result.latencyMs = Date.now() - start;
+    result.reachable = true;
+    result.status = res.status;
+    const data = res.data?.data;
+    result.modelCount = Array.isArray(data) ? data.length : 0;
+  } catch (error) {
+    result.latencyMs = Date.now() - start;
+    if (axios.isAxiosError(error) && error.response?.status) {
+      result.status = error.response.status;
+    }
+    result.error = logAxiosError({
+      message: `Connection probe failed for ${name} endpoint`,
+      error: error as Error,
+    });
+    return result;
+  }
+
+  if (chatPing) {
+    result.detectedResponsesApiMismatch = await detectResponsesApiMismatch({
+      baseURL,
+      headers: requestHeaders,
+      timeout,
+      useResponsesApi,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * When the endpoint opts into the Responses API, pings `/responses` and
+ * `/chat/completions` with a minimal 1-token payload. A mismatch is reported
+ * when `/responses` fails (4xx/5xx/network) while `/chat/completions` succeeds,
+ * indicating a backend (e.g. a chat-completions-only gateway) that cannot serve
+ * the Responses API the endpoint is configured for.
+ */
+async function detectResponsesApiMismatch({
+  baseURL,
+  headers,
+  timeout,
+  useResponsesApi,
+}: {
+  baseURL: string;
+  headers: Record<string, string>;
+  timeout: number;
+  useResponsesApi: boolean;
+}): Promise<boolean | null> {
+  if (!useResponsesApi) {
+    return false;
+  }
+
+  const root = baseURL.replace(/\/+$/, '');
+  const chatOk = await pingChatRoute(`${root}/chat/completions`, headers, timeout, {
+    messages: [{ role: 'user', content: 'ping' }],
+    max_tokens: 1,
+  });
+  const responsesOk = await pingChatRoute(`${root}/responses`, headers, timeout, {
+    input: 'ping',
+    max_output_tokens: 1,
+  });
+
+  if (chatOk && !responsesOk) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Issues a minimal POST ping to a chat route and reports whether it was
+ * accepted (any non-error HTTP status). The dummy `model` is intentionally
+ * omitted-friendly: gateways that reject on the route itself (404/405) signal
+ * lack of support, which is the signal the caller cares about.
+ */
+async function pingChatRoute(
+  url: string,
+  headers: Record<string, string>,
+  timeout: number,
+  body: Record<string, unknown>,
+): Promise<boolean> {
+  const options: AxiosRequestConfig & { headers: Record<string, string>; timeout: number } = {
+    headers,
+    timeout,
+    validateStatus: () => true,
+  };
+  applyAxiosProxyConfig(options, new URL(url));
+  try {
+    const res = await axios.post(url, body, options);
+    return res.status < 400;
+  } catch {
+    return false;
+  }
+}
+
 /** Options for fetching OpenAI models */
 export interface GetOpenAIModelsOptions {
   /** User ID for API requests */
