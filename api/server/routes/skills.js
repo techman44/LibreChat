@@ -1,5 +1,6 @@
 const path = require('path');
 const crypto = require('crypto');
+const JSZip = require('jszip');
 const multer = require('multer');
 const express = require('express');
 const {
@@ -287,6 +288,67 @@ async function uploadFileHandler(req, res) {
 }
 
 // ---------------------------------------------------------------------------
+// Export handler (skill → .skill zip; inverse of import)
+// ---------------------------------------------------------------------------
+const SKILL_MD = 'SKILL.md';
+
+/** Read a stored skill file blob into a Buffer via its storage strategy. */
+async function readSkillFileBuffer(req, file) {
+  const { getDownloadStream } = getStrategyFunctions(file.source);
+  if (!getDownloadStream) {
+    throw new Error(`Storage backend "${file.source}" does not support reads`);
+  }
+  const stream = await getDownloadStream(req, file.storageKey || file.filepath);
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+/** Build a filesystem-safe archive name from the skill name. */
+function exportFilename(name) {
+  const safe = (name || 'skill')
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+  return `${safe || 'skill'}.skill`;
+}
+
+async function exportSkillHandler(req, res) {
+  try {
+    const skillId = req.params.id;
+    const skill = await skillDbMethods.getSkillById(skillId);
+    if (!skill) {
+      return res.status(404).json({ error: 'Skill not found' });
+    }
+
+    const zip = new JSZip();
+    zip.file(SKILL_MD, skill.body ?? '');
+
+    const files = await skillDbMethods.listSkillFiles(skillId);
+    for (const file of files) {
+      if (file.relativePath.toUpperCase() === SKILL_MD.toUpperCase()) {
+        continue;
+      }
+      const buffer = await readSkillFileBuffer(req, file);
+      zip.file(file.relativePath, buffer);
+    }
+
+    const archive = await zip.generateAsync({ type: 'nodebuffer' });
+    const filename = exportFilename(skill.name);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', archive.length);
+    return res.status(200).send(archive);
+  } catch (error) {
+    logger.error('[GET /skills/:id/export] Error exporting skill', error);
+    return res.status(500).json({ error: 'Failed to export skill' });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
 async function maybeStartRequestSkillSync(req, _res, next) {
@@ -342,6 +404,15 @@ router.delete(
   checkSkillCreate,
   canAccessSkillResource({ requiredPermission: PermissionBits.DELETE }),
   handlers.delete,
+);
+
+// Export: stream the skill as a .skill zip (SKILL.md + bundled files). Admin-gated.
+router.get(
+  '/:id/export',
+  requireAdminAccess,
+  canAccessSkillResource({ requiredPermission: PermissionBits.VIEW }),
+  restoreTenantContextFromReq,
+  exportSkillHandler,
 );
 
 router.get(
