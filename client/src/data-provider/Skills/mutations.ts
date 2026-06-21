@@ -19,6 +19,10 @@ import type {
   DeleteSkillOptions,
   UploadSkillFileOptions,
   ImportSkillOptions,
+  BuildSkillOptions,
+  ValidateSkillBuildOptions,
+  TBuildSkillResponse,
+  TSkillValidationResponse,
   DeleteSkillFileOptions,
 } from 'librechat-data-provider';
 
@@ -123,6 +127,39 @@ export const useCreateSkillMutation = (
       queryClient.setQueryData<TSkill>([QueryKeys.skill, skill._id], skill);
       addSkillToCachedLists(queryClient, skill);
       if (onSuccess) onSuccess(skill, variables, context);
+    },
+  });
+};
+
+/**
+ * AI Skill Builder: validate a drafted SKILL.md without persisting it. Used by
+ * the builder side panel to preview blocking errors / warnings before commit.
+ */
+export const useValidateSkillBuildMutation = (
+  options?: ValidateSkillBuildOptions,
+): UseMutationResult<TSkillValidationResponse, unknown, string> => {
+  return useMutation({
+    mutationFn: (content: string) => dataService.validateSkillBuild(content),
+    ...(options ?? {}),
+  });
+};
+
+/**
+ * AI Skill Builder: persist a drafted SKILL.md to the deployment skills
+ * directory and hot-reload it live. Invalidates the skill lists so the newly
+ * built skill appears without a refresh.
+ */
+export const useBuildSkillMutation = (
+  options?: BuildSkillOptions,
+): UseMutationResult<TBuildSkillResponse, unknown, string> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options ?? {};
+  return useMutation({
+    mutationFn: (content: string) => dataService.buildSkill(content),
+    ...rest,
+    onSuccess: (result, variables, context) => {
+      queryClient.invalidateQueries([QueryKeys.skills]);
+      if (onSuccess) onSuccess(result, variables, context);
     },
   });
 };
