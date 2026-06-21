@@ -369,3 +369,44 @@ export type TDeleteSkillFileVariables = {
  * owned = active, shared = `defaultActiveOnShare` from config.
  */
 export type TSkillStatesResponse = Record<string, boolean>;
+
+/** A single validation issue surfaced by the AI Skill Builder. */
+export type TSkillValidationIssue = {
+  field: string;
+  code: string;
+  message: string;
+  severity?: 'error' | 'warning';
+};
+
+/** Request body for the builder validate/build endpoints. */
+export type TBuildSkillRequest = {
+  /** The full raw `SKILL.md` document (frontmatter + body). */
+  content: string;
+};
+
+/** Response from POST `/api/skills/builder/validate` (no side effects). */
+export type TSkillValidationResponse = {
+  valid: boolean;
+  name: string;
+  description: string;
+  alwaysApply?: boolean;
+  errors: TSkillValidationIssue[];
+  warnings: TSkillValidationIssue[];
+};
+
+/** Diff of deployment skills after a hot-reload. */
+export type TDeploymentSkillReload = {
+  directory: string | null;
+  count: number;
+  added: string[];
+  removed: string[];
+  changed: string[];
+};
+
+/** Response from POST `/api/skills/builder` (persisted + hot-reloaded). */
+export type TBuildSkillResponse = {
+  name: string;
+  directory: string;
+  relativeDirectory: string;
+  reload: TDeploymentSkillReload;
+};

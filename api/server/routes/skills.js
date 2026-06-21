@@ -7,8 +7,10 @@ const {
   createImportHandler,
   generateCheckAccess,
   getStorageMetadata,
+  buildDeploymentSkill,
   reloadDeploymentSkills,
   resolveRequestTenantId,
+  validateSkillMarkdown,
   restoreTenantContextFromReq,
 } = require('@librechat/api');
 const { isValidObjectIdString, SystemCapabilities, logger } = require('@librechat/data-schemas');
@@ -318,6 +320,42 @@ router.post('/reload', requireAdminAccess, async (_req, res) => {
   } catch (error) {
     logger.error('[POST /skills/reload] Deployment skill reload failed:', error);
     return res.status(422).json({ error: error.message || 'Failed to reload deployment skills' });
+  }
+});
+
+// AI Skill Builder: validate a drafted SKILL.md without persisting. Used by the
+// builder side panel to preview blocking errors / warnings before committing.
+router.post('/builder/validate', checkSkillCreate, (req, res) => {
+  const content = req.body?.content;
+  if (typeof content !== 'string' || content.trim().length === 0) {
+    return res.status(400).json({ error: 'A non-empty SKILL.md content string is required' });
+  }
+  try {
+    return res.status(200).json(validateSkillMarkdown(content));
+  } catch (error) {
+    logger.error('[POST /skills/builder/validate] Validation failed:', error);
+    return res.status(500).json({ error: 'Failed to validate SKILL.md' });
+  }
+});
+
+// AI Skill Builder: persist a drafted SKILL.md to the deployment skills
+// directory and hot-reload so it goes live without a restart. Admin-gated like
+// /reload since it writes to the deployment filesystem. A validation failure is
+// 400; a reload failure (duplicate name, malformed sibling) is 422.
+router.post('/builder', requireAdminAccess, async (req, res) => {
+  const content = req.body?.content;
+  if (typeof content !== 'string' || content.trim().length === 0) {
+    return res.status(400).json({ error: 'A non-empty SKILL.md content string is required' });
+  }
+  try {
+    const result = await buildDeploymentSkill(content);
+    return res.status(201).json(result);
+  } catch (error) {
+    if (error.code === 'SKILL_VALIDATION_FAILED') {
+      return res.status(400).json({ error: error.message, issues: error.issues });
+    }
+    logger.error('[POST /skills/builder] Failed to build deployment skill:', error);
+    return res.status(422).json({ error: error.message || 'Failed to build deployment skill' });
   }
 });
 

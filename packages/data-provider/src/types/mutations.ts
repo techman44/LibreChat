@@ -10,6 +10,8 @@ import type {
   TDeleteSkillFileVariables,
   TDeleteSkillFileResponse,
   TSkillListResponse,
+  TBuildSkillResponse,
+  TSkillValidationResponse,
 } from './skills';
 import {
   Tools,
@@ -317,6 +319,10 @@ export type TUpdateSkillContext =
 export type ImportSkillOptions = MutationOptions<TSkill, FormData>;
 
 export type CreateSkillOptions = MutationOptions<TSkill, TCreateSkill>;
+
+export type BuildSkillOptions = MutationOptions<TBuildSkillResponse, string>;
+
+export type ValidateSkillBuildOptions = MutationOptions<TSkillValidationResponse, string>;
 
 export type UpdateSkillOptions = MutationOptions<
   TUpdateSkillResponse,

@@ -384,6 +384,8 @@ export const getAllPromptGroups = () => `${prompts()}/all`;
 /* Skills */
 export const skills = () => `${BASE_URL}/api/skills`;
 export const importSkill = () => `${skills()}/import`;
+export const buildSkill = () => `${skills()}/builder`;
+export const validateSkillBuild = () => `${skills()}/builder/validate`;
 
 export const getSkill = (id: string) => `${skills()}/${encodeURIComponent(id)}`;
 

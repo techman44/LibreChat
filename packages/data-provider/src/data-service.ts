@@ -60,6 +60,18 @@ export function updateSkillStates(
   return request.post(endpoints.skillStates(), { skillStates });
 }
 
+/** AI Skill Builder: validate a drafted SKILL.md without persisting. */
+export function validateSkillBuild(
+  content: string,
+): Promise<sk.TSkillValidationResponse> {
+  return request.post(endpoints.validateSkillBuild(), { content });
+}
+
+/** AI Skill Builder: persist a drafted SKILL.md and hot-reload it live. */
+export function buildSkill(content: string): Promise<sk.TBuildSkillResponse> {
+  return request.post(endpoints.buildSkill(), { content });
+}
+
 export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesResponse> {
   return request.get(endpoints.shareMessages(shareId));
 }
