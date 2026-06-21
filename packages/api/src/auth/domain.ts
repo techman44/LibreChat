@@ -53,6 +53,41 @@ export function isAddressAllowed(
 }
 
 /**
+ * Combines a global `allowedAddresses` exemption list with a per-server one,
+ * returning the deduplicated union of the raw entries (or `null` when both are
+ * empty/absent). Used to scope a trusted-LAN exemption to a single MCP server:
+ * the per-server list is additive — it can only ever widen the global exemption
+ * for that server, never narrow it and never affect the rest of the deployment.
+ *
+ * Entries are returned verbatim (only whitespace-trimmed and de-duplicated
+ * case-insensitively); the authoritative normalization and private-IP scoping
+ * happen downstream in {@link normalizeAllowedAddressesSet}, so invalid or
+ * public-IP entries are dropped at match time rather than here.
+ */
+export function mergeAllowedAddresses(
+  globalAllowedAddresses?: string[] | null,
+  perServerAllowedAddresses?: string[] | null,
+): string[] | null {
+  const global = Array.isArray(globalAllowedAddresses) ? globalAllowedAddresses : [];
+  const perServer = Array.isArray(perServerAllowedAddresses) ? perServerAllowedAddresses : [];
+  if (global.length === 0 && perServer.length === 0) {
+    return null;
+  }
+
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (const entry of [...global, ...perServer]) {
+    if (typeof entry !== 'string') continue;
+    const trimmed = entry.trim();
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(trimmed);
+  }
+  return merged.length > 0 ? merged : null;
+}
+
+/**
  * Checks if a hostname resolves to a private/reserved IP address.
  * Directly validates literal IPv4 and IPv6 addresses without DNS lookup.
  * For hostnames, resolves via DNS and checks all returned addresses.
@@ -440,8 +475,18 @@ export async function isMCPDomainAllowed(
     return true;
   }
 
+  /**
+   * Fold the server's own `allowedAddresses` into the global list so a
+   * per-server trusted-LAN exemption is honored at domain-validation time. The
+   * union is additive and scoped to this server only.
+   */
+  const effectiveAddresses = mergeAllowedAddresses(
+    allowedAddresses,
+    Array.isArray(config.allowedAddresses) ? (config.allowedAddresses as string[]) : null,
+  );
+
   // Use MCP_PROTOCOLS (HTTP/HTTPS/WS/WSS) for MCP server validation
-  return isDomainAllowedCore(domain, allowedDomains, MCP_PROTOCOLS, allowedAddresses);
+  return isDomainAllowedCore(domain, allowedDomains, MCP_PROTOCOLS, effectiveAddresses);
 }
 
 /**
