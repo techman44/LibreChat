@@ -6,6 +6,7 @@ import {
   FetchTokenConfig,
   extractEnvVariable,
 } from 'librechat-data-provider';
+import { logger, decryptV3 } from '@librechat/data-schemas';
 import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type {
@@ -25,6 +26,25 @@ import { validateEndpointURL } from '~/auth';
 import { tokenConfigCache } from '~/cache';
 
 const { PROXY } = process.env;
+
+const ENCRYPTED_API_KEY_PREFIX = 'v3:';
+
+/**
+ * Decrypts an apiKey that was stored at rest by the admin Connections API
+ * (`v3:` prefix). Env-var references, `user_provided`, and literal keys are
+ * returned unchanged so the existing resolution path is unaffected.
+ */
+function decryptStoredApiKey(apiKey: string): string {
+  if (!apiKey.startsWith(ENCRYPTED_API_KEY_PREFIX)) {
+    return apiKey;
+  }
+  try {
+    return decryptV3(apiKey);
+  } catch (error) {
+    logger.error('[custom/initialize] Failed to decrypt stored apiKey:', error);
+    return apiKey;
+  }
+}
 
 function getTenantTokenScope(tenantId?: string | null): string {
   const normalizedTenantId = typeof tenantId === 'string' ? tenantId.trim() : '';
@@ -183,7 +203,7 @@ export async function initializeCustom({
     throw new Error(`Config not found for the ${endpoint} custom endpoint.`);
   }
 
-  const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey ?? '');
+  const CUSTOM_API_KEY = decryptStoredApiKey(extractEnvVariable(endpointConfig.apiKey ?? ''));
   const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL ?? '');
 
   if (CUSTOM_API_KEY.match(envVarRegex)) {
