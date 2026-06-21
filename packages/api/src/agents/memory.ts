@@ -19,6 +19,7 @@ import type { ObjectId, MemoryMethods, IUser } from '@librechat/data-schemas';
 import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import type { Response as ServerResponse } from 'express';
 import type { RunLLMConfig } from '~/types';
+import { enforceResponsesApiPreference } from '~/agents/run';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import { resolveConfigHeaders, createSafeUser } from '~/utils';
 import Tokenizer from '~/utils/tokenizer';
@@ -381,6 +382,14 @@ ${memory ?? 'No existing memories'}`;
         (finalLLMConfig as OpenAIClientOptions).modelKwargs = modelKwargs;
       }
     }
+
+    /**
+     * Mirror the agent run path: strip Responses-API-only fields when
+     * `useResponsesApi` is not explicitly enabled, so a stray `reasoning`/`text`
+     * field inherited from the agent's `model_parameters` cannot promote memory
+     * extraction to the Responses API against a chat/completions-only backend.
+     */
+    enforceResponsesApiPreference(finalLLMConfig as OpenAIClientOptions);
 
     const bedrockConfig = finalLLMConfig as {
       additionalModelRequestFields?: { thinking?: unknown };

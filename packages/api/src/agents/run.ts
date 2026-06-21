@@ -258,7 +258,7 @@ export function getReasoningKey(
  * `useResponsesApi`. Mirrors `_useResponsesApi`'s `hasResponsesOnlyKwargs`
  * check in the SDK.
  */
-const RESPONSES_ONLY_KEYS = [
+export const RESPONSES_ONLY_KEYS = [
   'reasoning',
   'text',
   'truncation',
@@ -267,20 +267,19 @@ const RESPONSES_ONLY_KEYS = [
 ] as const;
 
 /**
- * Honors an endpoint's `useResponsesApi: false` for the agent run path.
+ * Honors an endpoint's `useResponsesApi: false` by stripping Responses-API-only
+ * fields whose mere presence makes `@langchain/openai` promote a request to the
+ * Responses API even when the flag is explicitly off. Against a
+ * chat/completions-only backend (e.g. LiteLLM) such a request yields a
+ * malformed `ResponseOutputTextParam` payload. When `useResponsesApi === true`
+ * the fields are preserved, so providers (OpenAI/Azure) that legitimately opt
+ * in are unaffected.
  *
- * `getOpenAIConfig` only emits Responses-API-only fields (`reasoning`, `text`,
- * …) when `useResponsesApi === true`, but `buildAgentInput` copies
- * `agent.model_parameters` verbatim — so any such field lingering on the
- * config would make `@langchain/openai` promote the request to the Responses
- * API even when the flag is explicitly off. Against a chat/completions-only
- * backend (e.g. LiteLLM) that yields a malformed `ResponseOutputTextParam`
- * payload. When the flag is not enabled, strip those fields so the chat
- * completions path is used. No-op for OpenAI/Azure providers that legitimately
- * opt in via `useResponsesApi: true`.
+ * Mutates `config` in place. Shared across the primary agent run, summarization,
+ * and memory LLM-config builders so every chat/completions code path is guarded
+ * identically.
  */
-function applyResponsesApiPreference(llmConfig: t.RunLLMConfig): void {
-  const config = llmConfig as OpenAIClientOptions;
+export function enforceResponsesApiPreference(config: Partial<OpenAIClientOptions>): void {
   if (config.useResponsesApi === true) {
     return;
   }
@@ -289,6 +288,18 @@ function applyResponsesApiPreference(llmConfig: t.RunLLMConfig): void {
       delete (config as Record<string, unknown>)[key];
     }
   }
+}
+
+/**
+ * `getOpenAIConfig` only emits Responses-API-only fields when
+ * `useResponsesApi === true`, but `buildAgentInput` copies
+ * `agent.model_parameters` verbatim — so any such field lingering on the
+ * config would promote the agent run to the Responses API even when the flag
+ * is explicitly off. Strips them for the agent run path via the shared
+ * {@link enforceResponsesApiPreference}.
+ */
+function applyResponsesApiPreference(llmConfig: t.RunLLMConfig): void {
+  enforceResponsesApiPreference(llmConfig as OpenAIClientOptions);
 }
 
 const DEEPSEEK_MODEL_PATTERN = /^deepseek(?:[-/]|$)/i;
@@ -630,6 +641,16 @@ function shapeSummarizationConfig(
     clientOverrides != null
       ? mergeParameters(clientOverrides, config?.parameters)
       : config?.parameters;
+
+  /**
+   * Guard the summarization client the same way as the agent run: a
+   * Responses-API-only field surviving on `summarization.parameters` (or a
+   * same-endpoint passthrough that inherited one) would promote the summary
+   * request to the Responses API against a chat/completions-only backend.
+   */
+  if (parameters != null) {
+    enforceResponsesApiPreference(parameters as Partial<OpenAIClientOptions>);
+  }
 
   return {
     enabled: config?.enabled !== false && isNonEmptyString(provider) && isNonEmptyString(model),
