@@ -429,6 +429,13 @@ export const WebSocketOptionsSchema = BaseOptionsSchema.extend({
 
 export const SSEOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('sse').default('sse'),
+  /**
+   * Internal flag (not user-facing): set by `markSSETransportFallback` when a
+   * remote server is configured with a `url` but no explicit `type`. Signals the
+   * connection layer to auto-detect the transport (prefer Streamable HTTP, fall
+   * back to SSE). Explicitly typed servers never carry this flag.
+   */
+  transportFallback: z.boolean().optional(),
   headers: z.record(z.string(), z.string()).optional(),
   /**
    * On-Behalf-Of (OBO) token exchange configuration.
@@ -483,12 +490,36 @@ export const StreamableHTTPOptionsSchema = BaseOptionsSchema.extend({
     ),
 });
 
-export const MCPOptionsSchema = z.union([
-  StdioOptionsSchema,
-  WebSocketOptionsSchema,
-  SSEOptionsSchema,
-  StreamableHTTPOptionsSchema,
-]);
+/**
+ * When a remote MCP server is configured with a `url` but no explicit `type`,
+ * the union resolves it as SSE (the schema's default), which silently fails
+ * against gateways that only speak Streamable HTTP. This marks such configs with
+ * `transportFallback: true` so the connection layer can auto-detect the transport
+ * (prefer Streamable HTTP, fall back to SSE). Stdio (no `url`) and explicitly
+ * typed remote servers are left untouched.
+ */
+const markSSETransportFallback = (val: unknown): unknown => {
+  if (
+    val &&
+    typeof val === 'object' &&
+    !Array.isArray(val) &&
+    'url' in val &&
+    !('type' in val)
+  ) {
+    return { ...(val as Record<string, unknown>), type: 'sse', transportFallback: true };
+  }
+  return val;
+};
+
+export const MCPOptionsSchema = z.preprocess(
+  markSSETransportFallback,
+  z.union([
+    StdioOptionsSchema,
+    WebSocketOptionsSchema,
+    SSEOptionsSchema,
+    StreamableHTTPOptionsSchema,
+  ]),
+);
 
 export const MCPServersSchema = z.record(z.string(), MCPOptionsSchema);
 
@@ -509,6 +540,7 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     customUserVars: true,
     oauth_headers: true,
     allowedAddresses: true,
+    transportFallback: true,
   });
 
 const userManagedServerFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T) =>

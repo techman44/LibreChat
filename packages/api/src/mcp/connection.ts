@@ -1864,17 +1864,8 @@ export class MCPConnection extends EventEmitter {
           await this.closeAgents();
         }
 
-        this.transport = await runOutsideTracing(() => this.constructTransport(this.options));
-        this.patchTransportSend();
-
         const connectTimeout = this.options.initTimeout ?? DEFAULT_INIT_TIMEOUT;
-        await runOutsideTracing(() =>
-          withTimeout(
-            this.client.connect(this.transport!),
-            connectTimeout,
-            `Connection timeout after ${connectTimeout}ms`,
-          ),
-        );
+        await this.connectTransport(this.detectRemoteTransport(), connectTimeout);
 
         this.setupTransportOnMessageHandler();
         this.connectionState = 'connected';
@@ -1996,6 +1987,96 @@ export class MCPConnection extends EventEmitter {
     })();
 
     return this.connectPromise;
+  }
+
+  /**
+   * Resolves the ordered list of transport types to attempt for this connection.
+   *
+   * For a remote server configured with only a `url` (no explicit `type`), the
+   * data-provider marks the options with `transportFallback`. Such servers prefer
+   * Streamable HTTP and fall back to SSE on handshake failure — this fixes
+   * gateways (e.g. LiteLLM/FastMCP) that speak Streamable HTTP but fail the SSE
+   * handshake and expose zero tools. Explicitly typed servers always use exactly
+   * their configured transport, so existing behavior is unchanged.
+   */
+  private detectRemoteTransport(): t.MCPOptions['type'][] {
+    if ('transportFallback' in this.options && this.options.transportFallback) {
+      return ['streamable-http', 'sse'];
+    }
+    return [this.options.type];
+  }
+
+  /**
+   * Constructs and connects the transport, trying each candidate type in order.
+   * On a non-fatal handshake failure (not OAuth or rate limiting), the next
+   * candidate is attempted; the successfully resolved type is persisted onto
+   * `this.options` so reconnects skip detection.
+   */
+  private async connectTransport(
+    transportTypes: t.MCPOptions['type'][],
+    connectTimeout: number,
+  ): Promise<void> {
+    let lastError: unknown;
+    for (let i = 0; i < transportTypes.length; i++) {
+      const type = transportTypes[i];
+      const isLastAttempt = i === transportTypes.length - 1;
+      const options = { ...this.options, type } as t.MCPOptions;
+      try {
+        this.transport = await runOutsideTracing(() => this.constructTransport(options));
+        this.patchTransportSend();
+        await runOutsideTracing(() =>
+          withTimeout(
+            this.client.connect(this.transport!),
+            connectTimeout,
+            `Connection timeout after ${connectTimeout}ms`,
+          ),
+        );
+        this.persistResolvedTransport(type);
+        return;
+      } catch (error) {
+        lastError = error;
+        /**
+         * OAuth and rate-limit errors are not transport-mismatch failures — let
+         * connectClient's handlers deal with them rather than masking with a
+         * fallback attempt.
+         */
+        if (isLastAttempt || this.isOAuthError(error) || this.isRateLimitError(error)) {
+          throw error;
+        }
+        logger.warn(
+          `${this.getLogPrefix()} ${type} transport handshake failed, falling back to ${transportTypes[i + 1]}:`,
+          error instanceof Error ? error.message : error,
+        );
+        await this.teardownFailedTransport();
+      }
+    }
+    throw lastError;
+  }
+
+  /** Closes a failed transport before retrying with the next candidate type. */
+  private async teardownFailedTransport(): Promise<void> {
+    if (!this.transport) {
+      return;
+    }
+    try {
+      await this.client.close();
+    } catch (error) {
+      logger.warn(`${this.getLogPrefix()} Error closing transport during fallback:`, error);
+    }
+    this.transport = null;
+    await this.closeAgents();
+  }
+
+  /**
+   * Persists the auto-detected transport type so reconnects use it directly and
+   * skip detection. No-op for explicitly typed servers.
+   */
+  private persistResolvedTransport(type: t.MCPOptions['type']): void {
+    if (!('transportFallback' in this.options && this.options.transportFallback)) {
+      return;
+    }
+    this.options = { ...this.options, type, transportFallback: false } as t.MCPOptions;
+    logger.info(`${this.getLogPrefix()} Auto-detected remote transport: ${type}`);
   }
 
   private patchTransportSend(): void {
