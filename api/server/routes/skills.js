@@ -7,10 +7,11 @@ const {
   createImportHandler,
   generateCheckAccess,
   getStorageMetadata,
+  reloadDeploymentSkills,
   resolveRequestTenantId,
   restoreTenantContextFromReq,
 } = require('@librechat/api');
-const { isValidObjectIdString, logger } = require('@librechat/data-schemas');
+const { isValidObjectIdString, SystemCapabilities, logger } = require('@librechat/data-schemas');
 const {
   PermissionBits,
   PermissionTypes,
@@ -29,6 +30,7 @@ const {
   getRoleByName,
 } = require('~/models');
 const { requireJwtAuth, canAccessSkillResource } = require('~/server/middleware');
+const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const {
   findAccessibleResources,
   findPubliclyAccessibleResources,
@@ -98,6 +100,7 @@ const checkSkillCreate = generateCheckAccess({
   permissions: [Permissions.USE, Permissions.CREATE],
   getRoleByName,
 });
+const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 
 // ---------------------------------------------------------------------------
 // Rate limiters (reuse existing file upload limiters)
@@ -305,6 +308,18 @@ router.post(
   restoreTenantContextFromReq,
   importHandler,
 );
+
+// Admin: hot-reload deployment (filesystem) skills without a process restart.
+// A failed reload preserves the previously loaded registry; report it as 422.
+router.post('/reload', requireAdminAccess, async (_req, res) => {
+  try {
+    const result = await reloadDeploymentSkills();
+    return res.status(200).json(result);
+  } catch (error) {
+    logger.error('[POST /skills/reload] Deployment skill reload failed:', error);
+    return res.status(422).json({ error: error.message || 'Failed to reload deployment skills' });
+  }
+});
 
 router.get('/', maybeStartRequestSkillSync, handlers.list);
 router.post('/', checkSkillCreate, handlers.create);

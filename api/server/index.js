@@ -22,6 +22,8 @@ const {
   QUERY_DEVTOOLS_HEADER,
   createStreamServices,
   initializeFileStorage,
+  registerShutdownTask,
+  watchDeploymentSkills,
   initializeDeploymentSkills,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
@@ -122,6 +124,12 @@ const startServer = async () => {
   const appConfig = await getAppConfig({ baseOnly: true });
   initializeFileStorage(appConfig);
   await initializeDeploymentSkills({ projectRoot: path.resolve(__dirname, '../..') });
+  if (process.env.DEPLOYMENT_SKILLS_WATCH !== 'false') {
+    const skillsWatcher = watchDeploymentSkills();
+    if (skillsWatcher) {
+      registerShutdownTask('deploymentSkillsWatcher', () => skillsWatcher.close());
+    }
+  }
   initializeGitHubSkillSync(appConfig);
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   await runAsSystem(async () => {
