@@ -252,6 +252,45 @@ export function getReasoningKey(
   return reasoningKey;
 }
 
+/**
+ * Fields the OpenAI SDK treats as "Responses-API-only" — their mere presence
+ * makes `@langchain/openai` switch to the Responses API regardless of
+ * `useResponsesApi`. Mirrors `_useResponsesApi`'s `hasResponsesOnlyKwargs`
+ * check in the SDK.
+ */
+const RESPONSES_ONLY_KEYS = [
+  'reasoning',
+  'text',
+  'truncation',
+  'include',
+  'previous_response_id',
+] as const;
+
+/**
+ * Honors an endpoint's `useResponsesApi: false` for the agent run path.
+ *
+ * `getOpenAIConfig` only emits Responses-API-only fields (`reasoning`, `text`,
+ * …) when `useResponsesApi === true`, but `buildAgentInput` copies
+ * `agent.model_parameters` verbatim — so any such field lingering on the
+ * config would make `@langchain/openai` promote the request to the Responses
+ * API even when the flag is explicitly off. Against a chat/completions-only
+ * backend (e.g. LiteLLM) that yields a malformed `ResponseOutputTextParam`
+ * payload. When the flag is not enabled, strip those fields so the chat
+ * completions path is used. No-op for OpenAI/Azure providers that legitimately
+ * opt in via `useResponsesApi: true`.
+ */
+function applyResponsesApiPreference(llmConfig: t.RunLLMConfig): void {
+  const config = llmConfig as OpenAIClientOptions;
+  if (config.useResponsesApi === true) {
+    return;
+  }
+  for (const key of RESPONSES_ONLY_KEYS) {
+    if (key in config) {
+      delete (config as Record<string, unknown>)[key];
+    }
+  }
+}
+
 const DEEPSEEK_MODEL_PATTERN = /^deepseek(?:[-/]|$)/i;
 const OPENROUTER_LATEST_ROUTING_PREFIX = /^~/;
 
@@ -918,6 +957,8 @@ export async function createRun({
       },
       modelParameters,
     ) as t.RunLLMConfig;
+
+    applyResponsesApiPreference(llmConfig);
 
     const joinInstructionMap = (map?: Record<string, unknown>) =>
       Object.values(map ?? {})
