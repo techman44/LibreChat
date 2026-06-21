@@ -763,6 +763,13 @@ export const endpointSchema = baseEndpointSchema.merge(
       .strict()
       .optional(),
     directEndpoint: z.boolean().optional(),
+    /**
+     * Default value for the OpenAI Responses API toggle on this endpoint. When
+     * set, agents and the conversation path inherit it as their `useResponsesApi`
+     * default unless the request already specifies one. Set `false` for gateways
+     * that only speak the Chat Completions API. Omit to leave behavior unchanged.
+     */
+    useResponsesApi: z.boolean().optional(),
     titleMessageRole: z.enum(['system', 'user', 'assistant']).optional(),
     /** Static per-model token config: context window and per-million-token rates */
     tokenConfig: z
