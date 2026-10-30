@@ -61,7 +61,7 @@ jobs:
     if: |
       github.event_name != 'pull_request' ||
       github.event.pull_request.user.login == 'danny-avila'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     # Embedding generation dominates the budget: ~45 min worst case on
     # standard runners since the 1.6.x graph (~23k nodes) doubled vs 1.5.x.
     timeout-minutes: 60
@@ -258,7 +258,7 @@ jobs:
       always() &&
       (inputs.pr_number != '' ||
        inputs.deploy_after)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     timeout-minutes: 5
     permissions:
       contents: read
