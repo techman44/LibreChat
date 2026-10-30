@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   generate:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     steps:
       - uses: actions/checkout@v4
       - uses: supabase/embeddings-generator@v0.0.5
