@@ -25,7 +25,7 @@ jobs:
     # folder pruning step catches any fork-contributor indexes that
     # actually made it onto the droplet.
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     timeout-minutes: 5
     steps:
       # Skip the SSH round-trip entirely when no index artifact was ever
