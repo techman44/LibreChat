@@ -17,7 +17,7 @@ env:
 jobs:
   build:
     name: Build packages
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +81,7 @@ jobs:
   typecheck:
     name: TypeScript type checks (client)
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -125,7 +125,7 @@ jobs:
   test-ubuntu:
     name: 'Tests: Ubuntu (shard ${{ matrix.shard }}/4)'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -221,7 +221,7 @@ jobs:
   build-verify:
     name: Vite build verification
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
