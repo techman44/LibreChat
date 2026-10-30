@@ -12,7 +12,7 @@ permissions:
 jobs:
   sync-translations:
     name: Sync Translation Keys with Locize
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
 
   create-pull-request:
     name: Create Translation PR on Version Published
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     needs: sync-translations
     permissions:
       contents: read
