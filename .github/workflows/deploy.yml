@@ -16,7 +16,7 @@ env:
 
 jobs:
   deploy-gh-runner-aci:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     steps:
       # checkout the repo
       - name: 'Checkout GitHub Action'
