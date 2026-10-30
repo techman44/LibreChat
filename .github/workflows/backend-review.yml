@@ -15,7 +15,7 @@ env:
 jobs:
   build:
     name: Build packages
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -98,7 +98,7 @@ jobs:
   typecheck:
     name: TypeScript type checks
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -157,7 +157,7 @@ jobs:
   circular-deps:
     name: Circular dependency checks
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -217,7 +217,7 @@ jobs:
   test-api:
     name: 'Tests: api (shard ${{ matrix.shard }}/3)'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -288,7 +288,7 @@ jobs:
   test-data-provider:
     name: 'Tests: data-provider'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -326,7 +326,7 @@ jobs:
   test-data-schemas:
     name: 'Tests: data-schemas'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -370,7 +370,7 @@ jobs:
   test-packages-api:
     name: 'Tests: @librechat/api (shard ${{ matrix.shard }}/4)'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, pips-lxc]
     # Suite typically completes in ~5 min on a warm runner, but tail-latency
     # cancellations have started showing up: tests are actively passing right
     # up to the timeout, then the job is killed mid-suite. Sharding splits the
